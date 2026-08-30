@@ -1,68 +1,96 @@
-name: AI PR Review
+name: Gemini AI PR Review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: gemini-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 jobs:
   review:
     name: Gemini Code Review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare PR context
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .gemini
+          
+          jq -n \
+            --arg repo "$REPOSITORY" \
+            --arg pr "$PULL_REQUEST_NUMBER" \
+            '{
+              repository: $repo,
+              pull_request_number: $pr,
+              additional_context: "Review this as a Java/Spring Boot production codebase."
+            }' > .gemini/context.json
 
       - name: Gemini PR Review
+        id: gemini-review
         uses: google-github-actions/run-gemini-cli@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_CLI_TRUST_WORKSPACE: "true"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          prompt: |
-            Review this pull request as a senior Java/Spring Boot engineer.
 
-            Analyze ONLY the changes introduced by this PR.
+          github_pr_number: ${{ github.event.pull_request.number }}
 
-            Look for:
+          gemini_model: gemini-2.5-flash
 
-            1. Correctness bugs
-            2. Null pointer risks
-            3. Incorrect exception handling
-            4. Spring Boot issues
-            5. Transaction problems
-            6. Security vulnerabilities
-            7. SQL/database issues
-            8. Performance problems
-            9. Concurrency/thread-safety issues
-            10. REST API design problems
-            11. Missing or inadequate tests
-            12. Maintainability problems
+          extensions: |
+            [
+              "https://github.com/gemini-cli-extensions/code-review"
+            ]
 
-            Do NOT complain about:
-            - Formatting
-            - Minor naming preferences
-            - Personal coding style
-            - Changes that are purely subjective
+          settings: |
+            {
+              "model": {
+                "maxSessionTurns": 20
+              },
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v0.27.0"
+                  ],
+                  "includeTools": [
+                    "pull_request_read",
+                    "add_comment_to_pending_review",
+                    "pull_request_review_write"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
+              },
+              "tools": {
+                "core": []
+              }
+            }
 
-            Only report issues that are genuinely worth fixing.
-
-            For every issue provide:
-            - Severity: CRITICAL / HIGH / MEDIUM / LOW
-            - File and line
-            - What's wrong
-            - Why it matters
-            - Recommended fix
-
-            If there are no meaningful issues, respond with:
-
-            ## AI Review
-
-            ✅ No significant issues found.
+          prompt: "/pr-code-review"
