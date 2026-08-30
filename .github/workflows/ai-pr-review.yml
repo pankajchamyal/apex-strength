@@ -21,29 +21,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Prepare PR context
-        shell: bash
-        env:
-          REPOSITORY: ${{ github.repository }}
-          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          mkdir -p .gemini
-          
-          jq -n \
-            --arg repo "$REPOSITORY" \
-            --arg pr "$PULL_REQUEST_NUMBER" \
-            '{
-              repository: $repo,
-              pull_request_number: $pr,
-              additional_context: "Review this as a Java/Spring Boot production codebase."
-            }' > .gemini/context.json
-
       - name: Gemini PR Review
-        id: gemini-review
         uses: google-github-actions/run-gemini-cli@v0
         env:
           GEMINI_CLI_TRUST_WORKSPACE: "true"
@@ -53,19 +35,23 @@ jobs:
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 
+          # Explicitly select the free-tier model
+          gemini_model: gemini-3.1-flash-lite
+
+          # Tell Gemini exactly which PR it is reviewing
           github_pr_number: ${{ github.event.pull_request.number }}
 
-          gemini_model: gemini-2.5-flash
-
+          # Google's official PR review extension
           extensions: |
             [
               "https://github.com/gemini-cli-extensions/code-review"
             ]
 
+          # GitHub MCP configuration
           settings: |
             {
               "model": {
-                "maxSessionTurns": 20
+                "maxSessionTurns": 5
               },
               "mcpServers": {
                 "github": {
