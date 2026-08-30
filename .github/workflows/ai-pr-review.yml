@@ -41,4 +41,29 @@ jobs:
               "https://github.com/gemini-cli-extensions/code-review"
             ]
 
+          settings: |
+            {
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v0.27.0"
+                  ],
+                  "includeTools": [
+                    "pull_request_read",
+                    "add_comment_to_pending_review",
+                    "pull_request_review_write"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
+              }
+            }
+
           prompt: "/pr-code-review"
